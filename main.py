@@ -35,51 +35,43 @@ async def set_chat_lock(client, lock: bool):
         print(f"권한 변경 실패: {e}")
 
 async def run_check():
-    intents = discord.Intents.default()
-    # 봇 권한 설정 (Intents)
-    intents.guilds = True
-    intents.members = True 
+    # 1. 인텐트 설정 (모든 권한 허용 모드)
+    intents = discord.Intents.all() 
     client = discord.Client(intents=intents)
 
     @client.event
     async def on_ready():
         print(f"로그인 성공: {client.user}")
         try:
-            # 주소를 조금 더 안정적인 '공개 API' 주소로 변경했습니다.
+            # 치지직 API 체크 로직 (기존과 동일)
             url = f'https://api.chzzk.naver.com/service/v2/channels/{CHZZK_ID}/live-status'
             r = requests.get(url, headers=headers)
             res = r.json()
             
-            # 데이터 구조가 바뀐 경우를 대비해 안전하게 가져오기
             content = res.get('content')
             if not content:
-                print("API 응답에 content가 없습니다.")
+                print("API 응답 오류")
                 await client.close()
                 return
 
             current_status = content.get('status', 'CLOSE') 
             last_status = get_last_status()
 
-            print(f"현재 상태: {current_status} / 이전 상태: {last_status}")
-
             if current_status != last_status:
                 channel = client.get_channel(CHANNEL_ID)
                 if channel:
                     if current_status == 'OPEN':
-                        title = content.get('liveTitle', '제목 없음')
-                        await channel.send(f"🔔 **방송 시작!**\n제목: {title}\n채팅창을 잠급니다.")
+                        await channel.send("🟢 방송 시작!")
                         await set_chat_lock(client, True)
                     else:
-                        await channel.send("📴 **방송 종료!**\n채팅창 잠금을 해제합니다.")
+                        await channel.send("🔴 방송 종료!")
                         await set_chat_lock(client, False)
-                
                 save_status(current_status)
             
-            await asyncio.sleep(2) # 연결 안정성을 위해 잠시 대기
+            await asyncio.sleep(2)
             await client.close()
-            
         except Exception as e:
-            print(f"에러 발생 상세: {e}")
+            print(f"에러: {e}")
             await client.close()
 
     try:
