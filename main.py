@@ -11,7 +11,6 @@ STATUS_FILE = "last_status.txt"
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Referer': 'https://chzzk.naver.com/'
 }
 
 def get_last_status():
@@ -25,7 +24,6 @@ def save_status(status):
         f.write(status)
 
 async def set_chat_lock(client, lock: bool):
-    """디스코드 채팅 잠금/해제 함수"""
     try:
         channel = client.get_channel(CHANNEL_ID)
         if channel:
@@ -38,39 +36,61 @@ async def set_chat_lock(client, lock: bool):
 
 async def run_check():
     intents = discord.Intents.default()
+    # 봇 권한 설정 (Intents)
+    intents.guilds = True
+    intents.members = True 
     client = discord.Client(intents=intents)
 
     @client.event
     async def on_ready():
+        print(f"로그인 성공: {client.user}")
         try:
-            url = f'https://api.chzzk.naver.com/service/v1/channels/{CHZZK_ID}/live-status'
+            # 주소를 조금 더 안정적인 '공개 API' 주소로 변경했습니다.
+            url = f'https://api.chzzk.naver.com/service/v2/channels/{CHZZK_ID}/live-status'
             r = requests.get(url, headers=headers)
-            data = r.json()
-            current_status = data['content']['status'] # 'OPEN' 또는 'CLOSE'
+            res = r.json()
+            
+            # 데이터 구조가 바뀐 경우를 대비해 안전하게 가져오기
+            content = res.get('content')
+            if not content:
+                print("API 응답에 content가 없습니다.")
+                await client.close()
+                return
+
+            current_status = content.get('status', 'CLOSE') 
             last_status = get_last_status()
 
-            # 상태가 변했을 때만 작동
+            print(f"현재 상태: {current_status} / 이전 상태: {last_status}")
+
             if current_status != last_status:
                 channel = client.get_channel(CHANNEL_ID)
-                if current_status == 'OPEN':
-                    title = data['content'].get('liveTitle', '제목 없음')
-                    await channel.send(f"🔔 **방송 시작!**\n제목: {title}\n채팅창을 잠급니다.")
-                    await set_chat_lock(client, True)
-                else:
-                    await channel.send("📴 **방송 종료!**\n채팅창 잠금을 해제합니다.")
-                    await set_chat_lock(client, False)
+                if channel:
+                    if current_status == 'OPEN':
+                        title = content.get('liveTitle', '제목 없음')
+                        await channel.send(f"🔔 **방송 시작!**\n제목: {title}\n채팅창을 잠급니다.")
+                        await set_chat_lock(client, True)
+                    else:
+                        await channel.send("📴 **방송 종료!**\n채팅창 잠금을 해제합니다.")
+                        await set_chat_lock(client, False)
                 
                 save_status(current_status)
             
+            await asyncio.sleep(2) # 연결 안정성을 위해 잠시 대기
             await client.close()
+            
         except Exception as e:
-            print(f"에러 발생: {e}")
+            print(f"에러 발생 상세: {e}")
             await client.close()
 
-    await client.start(TOKEN)
+    try:
+        await client.start(TOKEN)
+    except Exception as e:
+        print(f"디스코드 연결 실패: {e}")
 
 if __name__ == "__main__":
     if TOKEN and CHANNEL_ID:
-        asyncio.run(run_check())
+        # 이벤트 루프 닫힘 에러 방지를 위해 새로운 루프 사용
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(run_check())
     else:
-        print("환경 변수(TOKEN, CHANNEL_ID)가 설정되지 않았습니다.")
+        print("환경 변수 설정 오류")
